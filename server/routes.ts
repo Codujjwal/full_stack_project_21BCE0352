@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { generateTaskSuggestions } from "./openai";
@@ -8,28 +8,35 @@ import { insertTaskSchema, updateTaskSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
-  
+
   const httpServer = createServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-  
+
   function broadcastToUser(userId: number, data: any) {
     wss.clients.forEach(client => {
-      if (client.readyState === client.OPEN && (client as any).userId === userId) {
+      if (client.readyState === WebSocket.OPEN && (client as any).userId === userId) {
         client.send(JSON.stringify(data));
       }
     });
   }
 
   wss.on('connection', (ws) => {
+    console.log('New WebSocket connection established');
+
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message.toString());
         if (data.type === 'auth' && data.userId) {
+          console.log('WebSocket authenticated for user:', data.userId);
           (ws as any).userId = data.userId;
         }
       } catch (e) {
         console.error('WebSocket message error:', e);
       }
+    });
+
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
     });
   });
 
@@ -41,7 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks", async (req, res) => {
     if (!req.user) return res.sendStatus(401);
-    
+
     const result = insertTaskSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ error: result.error });
@@ -62,7 +69,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/tasks/:id", async (req, res) => {
     if (!req.user) return res.sendStatus(401);
-    
+
     const result = updateTaskSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ error: result.error });
@@ -72,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       parseInt(req.params.id),
       result.data.completed
     );
-    
+
     if (!task) {
       return res.status(404).json({ error: "Task not found" });
     }
@@ -117,7 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!title) {
       return res.status(400).json({ error: "Title is required" });
     }
-    
+
     const suggestions = await generateTaskSuggestions(title);
     res.json(suggestions);
   });
