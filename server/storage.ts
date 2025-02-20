@@ -1,11 +1,8 @@
 import { users, tasks, type User, type InsertUser, type Task, type InsertTask } from "@shared/schema";
-import { db } from "./db";
-import { eq } from "drizzle-orm";
 import session from "express-session";
-import connectPg from "connect-pg-simple";
-import { pool } from "./db";
+import createMemoryStore from "memorystore";
 
-const PostgresSessionStore = connectPg(session);
+const MemoryStore = createMemoryStore(session);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -21,66 +18,70 @@ export interface IStorage {
   sessionStore: session.Store;
 }
 
-export class DatabaseStorage implements IStorage {
+export class MemStorage implements IStorage {
+  private users: User[] = [];
+  private tasks: Task[] = [];
+  private nextUserId = 1;
+  private nextTaskId = 1;
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({
-      pool,
-      createTableIfMissing: true,
+    this.sessionStore = new MemoryStore({
+      checkPeriod: 86400000, // prune expired entries every 24h
     });
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    return this.users.find(u => u.id === id);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+    return this.users.find(u => u.username === username);
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(insertUser)
-      .returning();
+    const user: User = {
+      id: this.nextUserId++,
+      ...insertUser
+    };
+    this.users.push(user);
     return user;
   }
 
   async getTasks(userId: number): Promise<Task[]> {
-    return await db.select().from(tasks).where(eq(tasks.userId, userId));
+    return this.tasks.filter(t => t.userId === userId);
   }
 
   async getTask(id: number): Promise<Task | undefined> {
-    const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
-    return task;
+    return this.tasks.find(t => t.id === id);
   }
 
   async createTask(data: InsertTask & { userId: number }): Promise<Task> {
-    const [task] = await db
-      .insert(tasks)
-      .values({
-        ...data,
-        completed: false,
-      })
-      .returning();
+    const task: Task = {
+      id: this.nextTaskId++,
+      ...data,
+      completed: false,
+      createdAt: new Date()
+    };
+    this.tasks.push(task);
     return task;
   }
 
   async updateTask(id: number, completed: boolean): Promise<Task | undefined> {
-    const [task] = await db
-      .update(tasks)
-      .set({ completed })
-      .where(eq(tasks.id, id))
-      .returning();
-    return task;
+    const task = this.tasks.find(t => t.id === id);
+    if (task) {
+      task.completed = completed;
+      return task;
+    }
+    return undefined;
   }
 
   async deleteTask(id: number): Promise<void> {
-    await db.delete(tasks).where(eq(tasks.id, id));
+    const index = this.tasks.findIndex(t => t.id === id);
+    if (index !== -1) {
+      this.tasks.splice(index, 1);
+    }
   }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new MemStorage();
