@@ -2,8 +2,7 @@
   "name": "AI Task Manager",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:18",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": {},
-    "ghcr.io/devcontainers/features/postgres:1": {}
+    "ghcr.io/devcontainers/features/node:1": {}
   },
   "forwardPorts": [5000],
   "postCreateCommand": "npm install",
@@ -18,7 +17,6 @@
     }
   },
   "remoteEnv": {
-    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/taskmanager",
     "SESSION_SECRET": "dev-secret-key-change-in-production"
   }
 }
